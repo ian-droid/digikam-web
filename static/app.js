@@ -5,15 +5,25 @@
   const LS_DATE_EXPAND = "digikam_web_date_expand";
   const LS_VIEW = "digikam_web_view";
 
+  // Fixed thumbnail geometry (must match CSS)
+  const CELL_W = 160;
+  const CELL_H = 160 + 26; // image + caption row
+  const GAP = 12;          // 0.75rem
+  const PAGE_SIZE = 60;    // API page size
+  const MAX_DOM = 120;     // sliding window: max cards mounted in the DOM
+  const OVERSCAN_ROWS = 2;
+
   const state = {
     view: "albums", // albums | dates
     currentAlbumId: null,
     dateFilter: null, // { year, month?, day? }
-    offset: 0,
-    limit: 60,
+    buffer: [],       // all fetched image metadata (lightweight)
     total: 0,
+    nextOffset: 0,    // next API offset
+    hasMore: false,
     sort: "date",
     loading: false,
+    windowStart: 0,   // first buffer index currently in the DOM window
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -24,8 +34,6 @@
   const gridEl = $("#image-grid");
   const titleEl = $("#album-title");
   const countEl = $("#image-count");
-  const loadMoreWrap = $("#load-more-wrap");
-  const loadMoreBtn = $("#load-more");
   const sortSelect = $("#sort-select");
   const lightbox = $("#lightbox");
   const lbImg = $("#lb-img");
@@ -340,54 +348,71 @@
     parent.appendChild(el);
   }
 
-  // ---------- Image loading ----------
+  // ---------- Image loading (fixed size + sliding window) ----------
+  function gridCols() {
+    const pad = 32; // approx horizontal padding
+    const w = Math.max(CELL_W, gridEl.clientWidth - pad);
+    return Math.max(1, Math.floor((w + GAP) / (CELL_W + GAP)));
+  }
+
+  function cardStrideY() {
+    return CELL_H + GAP;
+  }
+
+  function resetGridState() {
+    state.buffer = [];
+    state.total = 0;
+    state.nextOffset = 0;
+    state.hasMore = false;
+    state.fetchStarted = false;
+    state.windowStart = 0;
+  }
+
   async function selectAlbum(albumId, name) {
     state.currentAlbumId = albumId;
     state.dateFilter = null;
-    state.offset = 0;
-    state.total = 0;
+    resetGridState();
     titleEl.textContent = name || `Album ${albumId}`;
     gridEl.innerHTML = `<div class="loading">Loading…</div>`;
-    loadMoreWrap.hidden = true;
-    await loadImages(false);
+    await loadImages();
   }
 
   async function selectDate(filter, label) {
     state.currentAlbumId = null;
     state.dateFilter = filter;
-    state.offset = 0;
-    state.total = 0;
+    resetGridState();
     titleEl.textContent = label;
     gridEl.innerHTML = `<div class="loading">Loading…</div>`;
-    loadMoreWrap.hidden = true;
-    await loadImages(false);
+    await loadImages();
   }
 
-  async function loadImages(append) {
+  function buildListUrl(offset, limit) {
+    if (state.dateFilter) {
+      const q = new URLSearchParams({
+        offset: String(offset),
+        limit: String(limit),
+        sort: state.sort,
+      });
+      if (state.dateFilter.year) q.set("year", state.dateFilter.year);
+      if (state.dateFilter.month) q.set("month", state.dateFilter.month);
+      if (state.dateFilter.day) q.set("day", state.dateFilter.day);
+      return `/api/dates/images?${q}`;
+    }
+    return `/api/albums/${state.currentAlbumId}/images?offset=${offset}&limit=${limit}&sort=${state.sort}`;
+  }
+
+  async function loadImages() {
     if (state.loading) return;
     if (!state.currentAlbumId && !state.dateFilter) return;
+    // After the first response, only continue while the API reports more pages
+    if (state.fetchStarted && !state.hasMore) return;
+
     state.loading = true;
-    if (!append) {
-      gridEl.innerHTML = `<div class="loading">Loading…</div>`;
-    }
-
+    state.fetchStarted = true;
     try {
-      let url;
-      if (state.dateFilter) {
-        const q = new URLSearchParams({
-          offset: String(state.offset),
-          limit: String(state.limit),
-          sort: state.sort,
-        });
-        if (state.dateFilter.year) q.set("year", state.dateFilter.year);
-        if (state.dateFilter.month) q.set("month", state.dateFilter.month);
-        if (state.dateFilter.day) q.set("day", state.dateFilter.day);
-        url = `/api/dates/images?${q}`;
-      } else {
-        url = `/api/albums/${state.currentAlbumId}/images?offset=${state.offset}&limit=${state.limit}&sort=${state.sort}`;
-      }
-
-      const res = await fetch(url, { credentials: "same-origin" });
+      const res = await fetch(buildListUrl(state.nextOffset, PAGE_SIZE), {
+        credentials: "same-origin",
+      });
       if (res.status === 401) {
         window.location.href = "/login";
         return;
@@ -396,27 +421,96 @@
       const data = await res.json();
 
       state.total = data.total;
-      countEl.textContent = `${data.total} item${data.total === 1 ? "" : "s"}`;
+      state.hasMore = !!data.has_more;
+      state.nextOffset += (data.images || []).length;
+      state.buffer.push(...(data.images || []));
 
-      if (!append) gridEl.innerHTML = "";
+      countEl.textContent = `${state.total} item${state.total === 1 ? "" : "s"}`;
 
-      if (!data.images.length && !append) {
+      if (!state.buffer.length) {
         gridEl.innerHTML = `<div class="placeholder">No photos in this selection.</div>`;
       } else {
-        const frag = document.createDocumentFragment();
-        data.images.forEach((img) => frag.appendChild(createThumbCard(img)));
-        gridEl.appendChild(frag);
+        // Keep window near the end after append so scroll-down feels continuous
+        ensureWindowForScroll();
+        renderWindow();
       }
-
-      state.offset += data.images.length;
-      loadMoreWrap.hidden = !data.has_more;
     } catch (err) {
-      if (!append) {
+      if (!state.buffer.length) {
         gridEl.innerHTML = `<div class="placeholder">Error: ${err.message}</div>`;
       }
     } finally {
       state.loading = false;
     }
+  }
+
+  function ensureWindowForScroll() {
+    const cols = gridCols();
+    const rowH = cardStrideY();
+    const scrollTop = gridEl.scrollTop;
+    const viewH = gridEl.clientHeight;
+
+    const firstVisibleRow = Math.max(0, Math.floor(scrollTop / rowH) - OVERSCAN_ROWS);
+    const visibleRows = Math.ceil(viewH / rowH) + OVERSCAN_ROWS * 2;
+    let start = firstVisibleRow * cols;
+    let end = start + visibleRows * cols;
+
+    // Clamp to buffer; prefer showing the latest pages when just loaded
+    if (end > state.buffer.length) {
+      end = state.buffer.length;
+      start = Math.max(0, end - MAX_DOM);
+    }
+    start = Math.max(0, Math.min(start, Math.max(0, state.buffer.length - 1)));
+    end = Math.min(state.buffer.length, Math.max(start + 1, start + MAX_DOM));
+    // Align start to column boundary for cleaner grid
+    start = start - (start % cols);
+
+    state.windowStart = start;
+  }
+
+  function renderWindow() {
+    if (!state.buffer.length) return;
+
+    const cols = gridCols();
+    const rowH = cardStrideY();
+    const totalRows = Math.ceil(state.buffer.length / cols);
+    // If we know total catalog size and have all? use buffer length for sizer;
+    // estimated full height uses total when hasMore so scrollbar grows gradually
+    const knownCount = state.hasMore ? Math.max(state.buffer.length, state.nextOffset) : state.buffer.length;
+    const sizerRows = Math.ceil(Math.max(knownCount, state.buffer.length) / cols);
+    const totalHeight = sizerRows * rowH;
+
+    let start = state.windowStart;
+    start = Math.max(0, start - (start % cols));
+    let end = Math.min(state.buffer.length, start + MAX_DOM);
+    // expand end to fill rows
+    end = Math.min(state.buffer.length, start + Math.ceil((end - start) / cols) * cols);
+
+    const topRows = Math.floor(start / cols);
+    const topPad = topRows * rowH;
+
+    let sizer = gridEl.querySelector(".grid-sizer");
+    let windowEl = gridEl.querySelector(".grid-window");
+    if (!sizer) {
+      gridEl.innerHTML = "";
+      sizer = document.createElement("div");
+      sizer.className = "grid-sizer";
+      windowEl = document.createElement("div");
+      windowEl.className = "grid-window";
+      sizer.appendChild(windowEl);
+      gridEl.appendChild(sizer);
+    }
+
+    sizer.style.height = `${totalHeight}px`;
+    windowEl.style.top = `${topPad}px`;
+    windowEl.innerHTML = "";
+
+    const frag = document.createDocumentFragment();
+    for (let i = start; i < end; i++) {
+      frag.appendChild(createThumbCard(state.buffer[i]));
+    }
+    windowEl.appendChild(frag);
+
+    state.windowStart = start;
   }
 
   function createThumbCard(img) {
@@ -427,6 +521,8 @@
     const image = document.createElement("img");
     image.loading = "lazy";
     image.alt = img.name || "";
+    image.width = 160;
+    image.height = 160;
     image.src = `/api/images/${img.id}/thumb?size=320`;
     image.onerror = () => {
       image.style.background = "#333";
@@ -441,6 +537,19 @@
     card.appendChild(meta);
     card.addEventListener("click", () => openLightbox(img));
     return card;
+  }
+
+  function onGridScroll() {
+    if (!state.buffer.length) return;
+
+    ensureWindowForScroll();
+    renderWindow();
+
+    const nearBottom =
+      gridEl.scrollTop + gridEl.clientHeight >= gridEl.scrollHeight - 300;
+    if (nearBottom && state.hasMore && !state.loading) {
+      loadImages();
+    }
   }
 
   // ---------- Lightbox + EXIF dialog ----------
@@ -644,20 +753,27 @@
   });
 
   // ---------- Controls ----------
-  loadMoreBtn.addEventListener("click", () => loadImages(true));
-
   sortSelect.addEventListener("change", () => {
     state.sort = sortSelect.value;
     if (state.currentAlbumId || state.dateFilter) {
-      state.offset = 0;
-      loadImages(false);
+      resetGridState();
+      gridEl.innerHTML = `<div class="loading">Loading…</div>`;
+      loadImages();
     }
   });
 
-  gridEl.addEventListener("scroll", () => {
-    if (loadMoreWrap.hidden || state.loading) return;
-    const nearBottom = gridEl.scrollTop + gridEl.clientHeight >= gridEl.scrollHeight - 200;
-    if (nearBottom) loadImages(true);
+  gridEl.addEventListener("scroll", onGridScroll, { passive: true });
+
+  // Recompute columns / window on resize
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (state.buffer.length) {
+        ensureWindowForScroll();
+        renderWindow();
+      }
+    }, 100);
   });
 
   // Boot
