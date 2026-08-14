@@ -10,6 +10,12 @@
   --danger: #ff6b6b;
   --radius: 8px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --cell-w: 160px;
+  --cell-h-img: 160px;
+  --cell-meta: 26px;
+  --cell-gap: 0.75rem;
+  --sidebar-w: 280px;
+  --topbar-h: 48px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -19,9 +25,11 @@ body {
   background: var(--bg);
   color: var(--text);
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 /* ---------- Login ---------- */
@@ -29,7 +37,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100vh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 1rem;
   background: radial-gradient(ellipse at top, #1e3a5f 0%, var(--bg) 60%);
 }
 
@@ -99,13 +109,51 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 1.25rem;
-  height: 48px;
+  height: var(--topbar-h);
   background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  gap: 0.5rem;
 }
 
-.brand { font-weight: 600; letter-spacing: .02em; }
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.brand { font-weight: 600; letter-spacing: .02em; white-space: nowrap; }
+
+.icon-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  display: none; /* shown on mobile via .sidebar-toggle */
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  padding: 0;
+}
+
+/* Explicit: never leave the menu button invisible on narrow viewports */
+button#sidebar-toggle.sidebar-toggle {
+  /* default hidden; media query overrides */
+  display: none;
+}
+
+.icon-btn:hover,
+.icon-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+}
 
 .user { display: flex; align-items: center; gap: 1rem; font-size: .9rem; }
 .btn-logout {
@@ -122,13 +170,18 @@ body {
   min-height: 0;
 }
 
+.sidebar-backdrop {
+  display: none;
+}
+
 .sidebar {
-  width: 280px;
+  width: var(--sidebar-w);
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  z-index: 40;
 }
 
 .sidebar-header {
@@ -235,21 +288,21 @@ body {
   left: 0;
   right: 0;
   display: grid;
-  /* Fixed columns — never stretch/squash thumbs when more load */
-  grid-template-columns: repeat(auto-fill, 160px);
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, var(--cell-w));
+  gap: var(--cell-gap);
   justify-content: start;
   align-content: start;
 }
 
 .thumb-card {
-  width: 160px;
+  width: var(--cell-w);
   background: var(--bg-card);
   border-radius: var(--radius);
   overflow: hidden;
   cursor: pointer;
   transition: transform .12s ease, box-shadow .12s ease;
   border: 1px solid transparent;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .thumb-card:hover {
@@ -260,8 +313,8 @@ body {
 
 .thumb-card img {
   display: block;
-  width: 160px;
-  height: 160px;
+  width: var(--cell-w);
+  height: var(--cell-h-img);
   object-fit: cover;
   background: #111;
 }
@@ -269,8 +322,8 @@ body {
 .thumb-card .meta {
   padding: .35rem .5rem;
   font-size: .75rem;
-  height: 1.6rem;
-  line-height: 1.6rem;
+  height: var(--cell-meta);
+  line-height: var(--cell-meta);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -529,4 +582,164 @@ body {
 .map-coords {
   font-size: 0.75rem;
   margin-top: 0.15rem;
+}
+
+/* ---------- Mobile / narrow screens ---------- */
+@media (max-width: 900px) {
+  :root {
+    --cell-w: 112px;
+    --cell-h-img: 112px;
+    --cell-meta: 24px;
+    --cell-gap: 0.5rem;
+    --sidebar-w: min(320px, 88vw);
+  }
+
+  /* Hamburger — must win over .icon-btn { display:none } */
+  button#sidebar-toggle,
+  button#sidebar-toggle.icon-btn,
+  button#sidebar-toggle.sidebar-toggle,
+  .topbar .sidebar-toggle {
+    display: inline-flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    color: var(--text) !important;
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--border);
+  }
+
+  .username {
+    max-width: 7rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar {
+    padding: 0 0.65rem;
+  }
+
+  .layout {
+    position: relative;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    top: var(--topbar-h);
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 35;
+  }
+
+  .sidebar-backdrop[hidden] {
+    display: none !important;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: var(--topbar-h);
+    left: 0;
+    bottom: 0;
+    width: var(--sidebar-w);
+    max-width: 88vw;
+    transform: translateX(-105%);
+    transition: transform 0.2s ease;
+    border-right: 1px solid var(--border);
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.4);
+  }
+
+  body.sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  body.sidebar-open {
+    /* prevent background scroll when drawer open */
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  #album-title {
+    font-size: 0.95rem;
+    flex: 1 1 100%;
+  }
+
+  .toolbar-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .sort-text {
+    display: none;
+  }
+
+  .album-item {
+    min-height: 2.25rem;
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+  }
+
+  .view-tab {
+    min-height: 2.75rem;
+  }
+
+  .image-grid {
+    padding: 0.5rem;
+  }
+
+  .lb-icon-btn {
+    width: 2.5rem;
+    height: 2.5rem;
+    font-size: 1.35rem;
+  }
+
+  .lb-toolbar {
+    padding: 0.35rem 0.5rem;
+  }
+
+  .lb-stage {
+    padding: 0.35rem;
+  }
+
+  .exif-dialog {
+    padding: 0.5rem;
+    align-items: flex-end;
+  }
+
+  .exif-dialog-panel {
+    width: 100%;
+    max-height: min(85dvh, 90vh);
+    border-radius: 12px 12px 0 0;
+  }
+
+  .map-links-row {
+    flex-wrap: wrap;
+  }
+
+  .map-open-btn {
+    min-height: 2.25rem;
+  }
+}
+
+@media (max-width: 380px) {
+  :root {
+    --cell-w: 96px;
+    --cell-h-img: 96px;
+  }
+
+  .brand {
+    font-size: 0.95rem;
+  }
+}
+
+/* Prefer hover effects only when fine pointer available */
+@media (hover: none) {
+  .thumb-card:hover {
+    transform: none;
+    box-shadow: none;
+  }
 }

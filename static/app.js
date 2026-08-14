@@ -5,13 +5,31 @@
   const LS_DATE_EXPAND = "digikam_web_date_expand";
   const LS_VIEW = "digikam_web_view";
 
-  // Fixed thumbnail geometry (must match CSS)
-  const CELL_W = 160;
-  const CELL_H = 160 + 26; // image + caption row
-  const GAP = 12;          // 0.75rem
-  const PAGE_SIZE = 60;    // API page size
-  const MAX_DOM = 120;     // sliding window: max cards mounted in the DOM
+  // Thumbnail geometry follows CSS variables (responsive on mobile)
+  const PAGE_SIZE = 60;
+  const MAX_DOM = 120;
   const OVERSCAN_ROWS = 2;
+
+  function cellMetrics() {
+    const cs = getComputedStyle(document.documentElement);
+    const cellW = parseFloat(cs.getPropertyValue("--cell-w")) || 160;
+    const imgH = parseFloat(cs.getPropertyValue("--cell-h-img")) || 160;
+    const metaH = parseFloat(cs.getPropertyValue("--cell-meta")) || 26;
+    const gap = parseFloat(cs.getPropertyValue("--cell-gap")) || 12;
+    // gap may be in rem if browser returns full value - parseFloat handles "0.75rem" as 0.75
+    // Convert rem gap approximately
+    let gapPx = gap;
+    const rawGap = (cs.getPropertyValue("--cell-gap") || "").trim();
+    if (rawGap.endsWith("rem")) {
+      const rootFs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      gapPx = gap * rootFs;
+    }
+    return {
+      cellW,
+      cellH: imgH + metaH,
+      gap: gapPx,
+    };
+  }
 
   const state = {
     view: "albums", // albums | dates
@@ -35,6 +53,35 @@
   const titleEl = $("#album-title");
   const countEl = $("#image-count");
   const sortSelect = $("#sort-select");
+  const sidebarToggle = $("#sidebar-toggle");
+  const sidebarEl = $("#sidebar");
+  const sidebarBackdrop = $("#sidebar-backdrop");
+
+  function isMobileLayout() {
+    return window.matchMedia("(max-width: 900px)").matches;
+  }
+
+  function setSidebarOpen(open) {
+    document.body.classList.toggle("sidebar-open", open);
+    if (sidebarToggle) {
+      sidebarToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      sidebarToggle.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+    }
+    if (sidebarBackdrop) sidebarBackdrop.hidden = !open;
+  }
+
+  function closeSidebarIfMobile() {
+    if (isMobileLayout()) setSidebarOpen(false);
+  }
+
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener("click", () => {
+      setSidebarOpen(!document.body.classList.contains("sidebar-open"));
+    });
+  }
+  if (sidebarBackdrop) {
+    sidebarBackdrop.addEventListener("click", () => setSidebarOpen(false));
+  }
   const lightbox = $("#lightbox");
   const lbImg = $("#lb-img");
   const lbCaption = $("#lb-caption");
@@ -350,13 +397,15 @@
 
   // ---------- Image loading (fixed size + sliding window) ----------
   function gridCols() {
-    const pad = 32; // approx horizontal padding
-    const w = Math.max(CELL_W, gridEl.clientWidth - pad);
-    return Math.max(1, Math.floor((w + GAP) / (CELL_W + GAP)));
+    const { cellW, gap } = cellMetrics();
+    const pad = 16;
+    const w = Math.max(cellW, gridEl.clientWidth - pad);
+    return Math.max(1, Math.floor((w + gap) / (cellW + gap)));
   }
 
   function cardStrideY() {
-    return CELL_H + GAP;
+    const { cellH, gap } = cellMetrics();
+    return cellH + gap;
   }
 
   function resetGridState() {
@@ -374,6 +423,7 @@
     resetGridState();
     titleEl.textContent = name || `Album ${albumId}`;
     gridEl.innerHTML = `<div class="loading">Loading…</div>`;
+    closeSidebarIfMobile();
     await loadImages();
   }
 
@@ -383,6 +433,7 @@
     resetGridState();
     titleEl.textContent = label;
     gridEl.innerHTML = `<div class="loading">Loading…</div>`;
+    closeSidebarIfMobile();
     await loadImages();
   }
 
@@ -521,9 +572,12 @@
     const image = document.createElement("img");
     image.loading = "lazy";
     image.alt = img.name || "";
-    image.width = 160;
-    image.height = 160;
-    image.src = `/api/images/${img.id}/thumb?size=320`;
+    const { cellW } = cellMetrics();
+    image.width = Math.round(cellW);
+    image.height = Math.round(cellW);
+    // Request a bit denser than display for sharp retina
+    const thumbSize = Math.min(320, Math.max(160, Math.round(cellW * 2)));
+    image.src = `/api/images/${img.id}/thumb?size=${thumbSize}`;
     image.onerror = () => {
       image.style.background = "#333";
       image.alt = "No preview";
