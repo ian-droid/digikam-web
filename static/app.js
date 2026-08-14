@@ -564,10 +564,19 @@
     state.windowStart = start;
   }
 
+  function mediaKindFromName(name) {
+    const n = (name || "").toLowerCase();
+    if (/\.(mp4|mov|m4v|avi|mkv|webm|wmv|mpg|mpeg|3gp|mts|m2ts)$/.test(n)) return "video";
+    if (/\.(jpe?g|png|gif|webp|tiff?|bmp)$/.test(n)) return "image";
+    return "other";
+  }
+
   function createThumbCard(img) {
     const card = document.createElement("div");
     card.className = "thumb-card";
     card.dataset.id = img.id;
+    const kind = mediaKindFromName(img.name);
+    if (kind !== "image") card.classList.add("thumb-nonimage", `thumb-${kind}`);
 
     const image = document.createElement("img");
     image.loading = "lazy";
@@ -575,7 +584,6 @@
     const { cellW } = cellMetrics();
     image.width = Math.round(cellW);
     image.height = Math.round(cellW);
-    // Request a bit denser than display for sharp retina
     const thumbSize = Math.min(320, Math.max(160, Math.round(cellW * 2)));
     image.src = `/api/images/${img.id}/thumb?size=${thumbSize}`;
     image.onerror = () => {
@@ -588,6 +596,17 @@
     meta.textContent = img.name || `#${img.id}`;
 
     card.appendChild(image);
+    if (kind === "video") {
+      const badge = document.createElement("span");
+      badge.className = "media-badge";
+      badge.textContent = "VIDEO";
+      card.appendChild(badge);
+    } else if (kind === "other") {
+      const badge = document.createElement("span");
+      badge.className = "media-badge";
+      badge.textContent = "FILE";
+      card.appendChild(badge);
+    }
     card.appendChild(meta);
     card.addEventListener("click", () => openLightbox(img));
     return card;
@@ -618,8 +637,13 @@
   function openLightbox(img) {
     lbCurrentId = img.id;
     lbExifLoadedFor = null;
+    // /file returns original for stills, placeholder image for video/unsupported
     lbImg.src = `/api/images/${img.id}/file`;
-    lbCaption.textContent = img.name || "";
+    const kind = mediaKindFromName(img.name);
+    let caption = img.name || "";
+    if (kind === "video") caption += " (video — preview not available)";
+    else if (kind === "other") caption += " (no image preview)";
+    lbCaption.textContent = caption;
     lightbox.hidden = false;
     closeExifDialog();
   }

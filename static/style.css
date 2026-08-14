@@ -295,6 +295,7 @@ button#sidebar-toggle.sidebar-toggle {
 }
 
 .thumb-card {
+  position: relative;
   width: var(--cell-w);
   background: var(--bg-card);
   border-radius: var(--radius);
@@ -742,4 +743,18 @@ button#sidebar-toggle.sidebar-toggle {
     transform: none;
     box-shadow: none;
   }
+}
+
+.media-badge {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--accent);
+  pointer-events: none;
 }
