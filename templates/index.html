@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DigiKam Web</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">DigiKam Web</div>
+    <div class="user">
+      <span>{{ username }}</span>
+      <a href="/logout" class="btn-logout">Logout</a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="view-tabs">
+        <button type="button" class="view-tab active" data-view="albums" id="tab-albums">Albums</button>
+        <button type="button" class="view-tab" data-view="dates" id="tab-dates">Dates</button>
+      </div>
+
+      <div id="panel-albums" class="side-panel">
+        <div class="sidebar-header">Albums</div>
+        <div id="album-tree" class="album-tree">
+          <div class="loading">Loading albums…</div>
+        </div>
+      </div>
+
+      <div id="panel-dates" class="side-panel" hidden>
+        <div class="sidebar-header">Dates</div>
+        <div id="date-tree" class="album-tree">
+          <div class="loading">Loading dates…</div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="toolbar">
+        <div id="album-title">Select an album or a date</div>
+        <div class="toolbar-right">
+          <label>
+            Sort
+            <select id="sort-select">
+              <option value="name">Name</option>
+              <option value="date" selected>Date</option>
+              <option value="rating">Rating</option>
+            </select>
+          </label>
+          <span id="image-count" class="muted"></span>
+        </div>
+      </div>
+
+      <div id="image-grid" class="image-grid">
+        <div class="placeholder">Select an album or a date from the left to view photos.</div>
+      </div>
+
+      <div id="load-more-wrap" class="load-more-wrap" hidden>
+        <button id="load-more" class="btn">Load more</button>
+      </div>
+    </main>
+  </div>
+
+  <div id="lightbox" class="lightbox" hidden>
+    <div class="lb-toolbar">
+      <span id="lb-caption" class="lb-caption"></span>
+      <div class="lb-actions">
+        <button type="button" id="lb-info" class="lb-icon-btn" title="EXIF / Metadata" aria-label="Show metadata">ℹ</button>
+        <button type="button" id="lb-close" class="lb-icon-btn" title="Close" aria-label="Close">×</button>
+      </div>
+    </div>
+    <div class="lb-stage">
+      <img id="lb-img" alt="">
+    </div>
+  </div>
+
+  <div id="exif-dialog" class="exif-dialog" hidden>
+    <div class="exif-dialog-backdrop" id="exif-backdrop"></div>
+    <div class="exif-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="exif-dialog-title">
+      <div class="exif-dialog-header">
+        <h3 id="exif-dialog-title">EXIF / Metadata</h3>
+        <button type="button" id="exif-dialog-close" class="lb-icon-btn" title="Close" aria-label="Close">×</button>
+      </div>
+      <div id="exif-dialog-body" class="exif-dialog-body">
+        <div class="loading">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

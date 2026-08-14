@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+develop-eggs/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+MANIFEST
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Application runtime data (DB, TLS keys, caches)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Local TLS material (never commit private keys)
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Sample / local media used during development
+sample_media/
+
+# PyInstaller
+*.manifest
+*.spec.bak
+# Keep digikam-web.spec tracked; ignore generated output only (dist/ build/ above)
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Thumbnails / caches elsewhere
+thumb_cache/
+**/thumb_cache/
