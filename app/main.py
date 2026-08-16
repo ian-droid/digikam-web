@@ -25,7 +25,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.api import albums, auth_routes, config_routes, dates, images
+from app.api import albums, auth_routes, config_routes, dates, images, tags
 from app.api.deps import get_optional_user, set_globals
 from app.config import settings
 from app.db.app_db import AppDB
@@ -120,6 +120,7 @@ app.include_router(auth_routes.router)
 app.include_router(albums.router)
 app.include_router(images.router)
 app.include_router(dates.router)
+app.include_router(tags.router)
 app.include_router(config_routes.router)
 
 

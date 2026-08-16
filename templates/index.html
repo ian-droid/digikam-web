@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#141517">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>DigiKam Web</title>
-  <link rel="stylesheet" href="/static/style.css?v=mobile2">
+  <link rel="stylesheet" href="/static/style.css?v=tags1">
 </head>
 <body>
   <header class="topbar">
@@ -29,6 +29,7 @@
       <div class="view-tabs">
         <button type="button" class="view-tab active" data-view="albums" id="tab-albums">Albums</button>
         <button type="button" class="view-tab" data-view="dates" id="tab-dates">Dates</button>
+        <button type="button" class="view-tab" data-view="tags" id="tab-tags">Tags</button>
       </div>
 
       <div id="panel-albums" class="side-panel">
@@ -42,6 +43,21 @@
         <div class="sidebar-header">Dates</div>
         <div id="date-tree" class="album-tree">
           <div class="loading">Loading dates…</div>
+        </div>
+      </div>
+
+      <div id="panel-tags" class="side-panel" hidden>
+        <div class="sidebar-header tag-header-row">
+          <span>Tags</span>
+          <label class="tag-mode-label" title="People are tags marked as person/face in DigiKam">
+            <select id="tag-mode-select" aria-label="Tag filter">
+              <option value="all" selected>All tags</option>
+              <option value="people">People only</option>
+            </select>
+          </label>
+        </div>
+        <div id="tag-tree" class="album-tree">
+          <div class="loading">Loading tags…</div>
         </div>
       </div>
     </aside>
@@ -94,6 +110,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=mobile2"></script>
+  <script src="/static/app.js?v=tags1"></script>
 </body>
 </html>

@@ -758,3 +758,33 @@ button#sidebar-toggle.sidebar-toggle {
   color: var(--accent);
   pointer-events: none;
 }
+
+.tag-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.tag-mode-label select {
+  max-width: 8.5rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.75rem;
+}
+
+.album-item.tag-person .count {
+  color: var(--accent);
+  text-transform: lowercase;
+}
+
+/* Four view tabs: slightly tighter on mobile */
+@media (max-width: 900px) {
+  .view-tab {
+    font-size: 0.75rem;
+    padding: 0.55rem 0.25rem;
+  }
+}

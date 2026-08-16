@@ -4,6 +4,8 @@
   const LS_ALBUM_EXPAND = "digikam_web_album_expand";
   const LS_DATE_EXPAND = "digikam_web_date_expand";
   const LS_VIEW = "digikam_web_view";
+  const LS_TAG_EXPAND = "digikam_web_tag_expand";
+  const LS_TAG_MODE = "digikam_web_tag_mode";
 
   // Thumbnail geometry follows CSS variables (responsive on mobile)
   const PAGE_SIZE = 60;
@@ -35,6 +37,7 @@
     view: "albums", // albums | dates
     currentAlbumId: null,
     dateFilter: null, // { year, month?, day? }
+    tagId: null,
     buffer: [],       // all fetched image metadata (lightweight)
     total: 0,
     nextOffset: 0,    // next API offset
@@ -49,6 +52,9 @@
   const dateTreeEl = $("#date-tree");
   const panelAlbums = $("#panel-albums");
   const panelDates = $("#panel-dates");
+  const panelTags = $("#panel-tags");
+  const tagTreeEl = $("#tag-tree");
+  const tagModeSelect = $("#tag-mode-select");
   const gridEl = $("#image-grid");
   const titleEl = $("#album-title");
   const countEl = $("#image-count");
@@ -115,8 +121,12 @@
     });
     panelAlbums.hidden = view !== "albums";
     panelDates.hidden = view !== "dates";
-    if (view === "dates" && !dateTreeEl.dataset.loaded) {
+    if (panelTags) panelTags.hidden = view !== "tags";
+    if (view === "dates" && dateTreeEl && !dateTreeEl.dataset.loaded) {
       loadDates();
+    }
+    if (view === "tags" && tagTreeEl && !tagTreeEl.dataset.loaded) {
+      loadTags();
     }
   }
 
@@ -395,6 +405,123 @@
     parent.appendChild(el);
   }
 
+  // ---------- Tags tree ----------
+  function currentTagMode() {
+    if (tagModeSelect) return tagModeSelect.value === "people" ? "people" : "all";
+    return localStorage.getItem(LS_TAG_MODE) || "all";
+  }
+
+  async function loadTags() {
+    if (!tagTreeEl) return;
+    tagTreeEl.innerHTML = `<div class="loading">Loading tags…</div>`;
+    const peopleOnly = currentTagMode() === "people";
+    try {
+      const res = await fetch(`/api/tags?people_only=${peopleOnly ? "true" : "false"}`, {
+        credentials: "same-origin",
+      });
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      if (!res.ok) {
+        let detail = res.statusText;
+        try {
+          const body = await res.json();
+          detail = body.detail || detail;
+        } catch (_) {}
+        throw new Error(detail);
+      }
+      const data = await res.json();
+      renderTagTree(data.tags || []);
+      tagTreeEl.dataset.loaded = "1";
+    } catch (err) {
+      tagTreeEl.innerHTML = `<div class="loading">Error: ${err.message}</div>`;
+      console.error("loadTags", err);
+    }
+  }
+
+  function renderTagTree(nodes) {
+    tagTreeEl.innerHTML = "";
+    if (!nodes.length) {
+      tagTreeEl.innerHTML = `<div class="loading">${
+        currentTagMode() === "people"
+          ? "No people tags found (DigiKam TagProperties person/face flags)"
+          : "No tags found"
+      }</div>`;
+      return;
+    }
+    const expandMap = loadExpandMap(LS_TAG_EXPAND);
+    const frag = document.createDocumentFragment();
+    nodes.forEach((node) => renderTagNode(node, frag, 0, expandMap));
+    tagTreeEl.appendChild(frag);
+  }
+
+  function renderTagNode(node, parent, depth, expandMap) {
+    const hasChildren = node.children && node.children.length > 0;
+    const nodeKey = `tag-${node.id}`;
+    const el = document.createElement("div");
+    el.className = "album-item";
+    if (node.is_person) el.classList.add("tag-person");
+    el.style.setProperty("--depth", depth);
+    el.dataset.id = String(node.id);
+
+    const twisty = document.createElement("span");
+    twisty.className = "twisty";
+    const expanded = hasChildren && isExpanded(expandMap, nodeKey, false);
+    twisty.textContent = hasChildren ? (expanded ? "▾" : "▸") : " ";
+    el.appendChild(twisty);
+
+    const name = document.createElement("span");
+    name.textContent = node.name || "(unnamed)";
+    el.appendChild(name);
+
+    if (node.is_person) {
+      const badge = document.createElement("span");
+      badge.className = "count";
+      badge.textContent = "person";
+      el.appendChild(badge);
+    }
+
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectTag(node.id, node.name);
+      document.querySelectorAll("#tag-tree .album-item.active").forEach((a) => a.classList.remove("active"));
+      el.classList.add("active");
+    });
+
+    parent.appendChild(el);
+
+    if (hasChildren) {
+      const childWrap = document.createElement("div");
+      childWrap.className = "album-children";
+      childWrap.style.display = expanded ? "" : "none";
+      node.children.forEach((c) => renderTagNode(c, childWrap, depth + 1, expandMap));
+      parent.appendChild(childWrap);
+
+      twisty.style.cursor = "pointer";
+      twisty.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const nowHidden = childWrap.style.display !== "none";
+        childWrap.style.display = nowHidden ? "none" : "";
+        twisty.textContent = nowHidden ? "▸" : "▾";
+        const map = loadExpandMap(LS_TAG_EXPAND);
+        map[nodeKey] = !nowHidden;
+        saveExpandMap(LS_TAG_EXPAND, map);
+      });
+    }
+  }
+
+  async function selectTag(tagId, name) {
+    state.currentAlbumId = null;
+    state.dateFilter = null;
+    state.tagId = tagId;
+    resetGridState();
+    titleEl.textContent = name || `Tag ${tagId}`;
+    gridEl.innerHTML = `<div class="loading">Loading…</div>`;
+    closeSidebarIfMobile();
+    await loadImages();
+  }
+
   // ---------- Image loading (fixed size + sliding window) ----------
   function gridCols() {
     const { cellW, gap } = cellMetrics();
@@ -420,6 +547,7 @@
   async function selectAlbum(albumId, name) {
     state.currentAlbumId = albumId;
     state.dateFilter = null;
+    state.tagId = null;
     resetGridState();
     titleEl.textContent = name || `Album ${albumId}`;
     gridEl.innerHTML = `<div class="loading">Loading…</div>`;
@@ -430,6 +558,7 @@
   async function selectDate(filter, label) {
     state.currentAlbumId = null;
     state.dateFilter = filter;
+    state.tagId = null;
     resetGridState();
     titleEl.textContent = label;
     gridEl.innerHTML = `<div class="loading">Loading…</div>`;
@@ -449,12 +578,15 @@
       if (state.dateFilter.day) q.set("day", state.dateFilter.day);
       return `/api/dates/images?${q}`;
     }
+    if (state.tagId != null) {
+      return `/api/tags/${state.tagId}/images?offset=${offset}&limit=${limit}&sort=${state.sort}`;
+    }
     return `/api/albums/${state.currentAlbumId}/images?offset=${offset}&limit=${limit}&sort=${state.sort}`;
   }
 
   async function loadImages() {
     if (state.loading) return;
-    if (!state.currentAlbumId && !state.dateFilter) return;
+    if (!state.currentAlbumId && !state.dateFilter && state.tagId == null) return;
     // After the first response, only continue while the API reports more pages
     if (state.fetchStarted && !state.hasMore) return;
 
@@ -833,7 +965,7 @@
   // ---------- Controls ----------
   sortSelect.addEventListener("change", () => {
     state.sort = sortSelect.value;
-    if (state.currentAlbumId || state.dateFilter) {
+    if (state.currentAlbumId || state.dateFilter || state.tagId != null) {
       resetGridState();
       gridEl.innerHTML = `<div class="loading">Loading…</div>`;
       loadImages();
@@ -854,9 +986,22 @@
     }, 100);
   });
 
+  if (tagModeSelect) {
+    const savedMode = localStorage.getItem(LS_TAG_MODE) || "all";
+    tagModeSelect.value = savedMode === "people" ? "people" : "all";
+    tagModeSelect.addEventListener("change", () => {
+      localStorage.setItem(LS_TAG_MODE, tagModeSelect.value);
+      if (tagTreeEl) {
+        delete tagTreeEl.dataset.loaded;
+      }
+      loadTags();
+    });
+  }
+
   // Boot
   const savedView = localStorage.getItem(LS_VIEW) || "albums";
   setView(savedView);
   loadAlbums();
   if (savedView === "dates") loadDates();
+  if (savedView === "tags") loadTags();
 })();

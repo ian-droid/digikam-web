@@ -8,7 +8,7 @@ Read-only web frontend for DigiKam photo collections.
 - Command-line initialization (no web configuration UI)
 - User authentication (users managed via CLI only)
 - HTTPS only (operator supplies certificate + key)
-- **Albums** tree and **Dates** tree (year → month → day), with expandable folders and remembered collapse state
+- **Albums**, **Dates** (year → month → day), and **Tags** trees (optional **People only** filter for person/face tags), with expandable folders and remembered collapse state
 - Fixed-size thumbnail grid with infinite scroll and a sliding DOM window
 - On-the-fly thumbnails from original still images (Pillow → WebP, disk-cached)
 - EXIF / metadata panel from DigiKam’s database; map links when GPS is present
@@ -129,7 +129,7 @@ python -m app.cli.init_cmd config set map_link_templates '[
 
 ## Notes / limitations of this prototype
 
-- Browsing is limited to the **Albums** and **Dates** trees plus the image grid.
+- Browsing is limited to the **Albums**, **Dates**, and **Tags** trees plus the image grid.
 - No tagging, search, faces, or write operations.
 - Album path resolution relies on DigiKam’s `specificPath` / `identifier` values; network mounts must be reachable from the host running this app.
 - Default listen address is IPv4-only (`0.0.0.0`); see [Bind address and IPv6](#bind-address-and-ipv6).
@@ -146,6 +146,6 @@ python -m app.cli.init_cmd config set map_link_templates '[
 Items below are **not** scheduled; listed for orientation only.
 
 - **Video support** (low priority): real poster frames (e.g. via ffmpeg), HTML5 playback with HTTP Range, optional transcode for awkward codecs. Today videos only get placeholders + metadata.
-- Additional DigiKam views (tags, people, search)
+- Simple search / filters (filename, caption, rating)
 - Optional MySQL/MariaDB DigiKam core backend (repository interface is already separable)
 - Packaging refinements (see `PACKAGING.md`)

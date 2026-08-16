@@ -518,3 +518,162 @@ class DigikamRepository:
                 (prefix,),
             ).fetchone()
             return int(row["cnt"]) if row else 0
+
+    # ------------------------------------------------------------------ Tags
+    def get_tags(self) -> list[dict[str, Any]]:
+        """
+        All tags with parent id and person flag.
+        DigiKam marks people tags via TagProperties.property = 'person'.
+        """
+        with self.session() as conn:
+            # Tags table: id, pid, name, icon, iconkde (schema varies slightly)
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT
+                        t.id,
+                        t.pid,
+                        t.name,
+                        CASE
+                            WHEN EXISTS (
+                                SELECT 1 FROM TagProperties tp
+                                WHERE tp.tagid = t.id
+                                  AND lower(tp.property) IN ('person', 'faceengineid', 'kfaceid')
+                            ) THEN 1
+                            ELSE 0
+                        END AS is_person
+                    FROM Tags t
+                    ORDER BY t.name COLLATE NOCASE
+                    """
+                ).fetchall()
+            except Exception:
+                # Older / minimal schema without TagProperties
+                rows = conn.execute(
+                    """
+                    SELECT t.id, t.pid, t.name, 0 AS is_person
+                    FROM Tags t
+                    ORDER BY t.name COLLATE NOCASE
+                    """
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_images_by_tag(
+        self,
+        tag_id: int,
+        offset: int = 0,
+        limit: int = 60,
+        sort: str = "name",
+        include_children: bool = False,
+    ) -> list[dict[str, Any]]:
+        order_map = {
+            "name": "i.name COLLATE NOCASE",
+            "date": "ii.creationDate DESC",
+            "rating": "ii.rating DESC",
+            "id": "i.id",
+        }
+        order_by = order_map.get(sort, order_map["name"])
+
+        if include_children:
+            tag_filter = """
+                i.id IN (
+                    SELECT it.imageid FROM ImageTags it
+                    WHERE it.tagid = ?
+                       OR it.tagid IN (
+                           SELECT DISTINCT id FROM Tags
+                           WHERE pid = ?
+                       )
+                )
+            """
+            # Only direct children for simplicity; full subtree needs TagsTree or recursion
+            params_base: tuple = (tag_id, tag_id)
+        else:
+            tag_filter = """
+                i.id IN (SELECT it.imageid FROM ImageTags it WHERE it.tagid = ?)
+            """
+            params_base = (tag_id,)
+
+        with self.session() as conn:
+            if include_children:
+                # Prefer TagsTree if present (closure table: id, pid)
+                try:
+                    rows = conn.execute(
+                        f"""
+                        SELECT
+                            i.id, i.name, i.album, i.uniqueHash, i.status, i.category,
+                            i.modificationDate, i.fileSize,
+                            ii.rating, ii.creationDate, ii.digitizationDate,
+                            ii.width, ii.height, ii.orientation, ii.format
+                        FROM Images i
+                        LEFT JOIN ImageInformation ii ON ii.imageid = i.id
+                        WHERE i.status = 1
+                          AND i.id IN (
+                              SELECT it.imageid FROM ImageTags it
+                              WHERE it.tagid = ?
+                                 OR it.tagid IN (SELECT id FROM TagsTree WHERE pid = ?)
+                          )
+                        ORDER BY {order_by}
+                        LIMIT ? OFFSET ?
+                        """,
+                        (tag_id, tag_id, limit, offset),
+                    ).fetchall()
+                    return [dict(r) for r in rows]
+                except Exception:
+                    pass
+
+            rows = conn.execute(
+                f"""
+                SELECT
+                    i.id, i.name, i.album, i.uniqueHash, i.status, i.category,
+                    i.modificationDate, i.fileSize,
+                    ii.rating, ii.creationDate, ii.digitizationDate,
+                    ii.width, ii.height, ii.orientation, ii.format
+                FROM Images i
+                LEFT JOIN ImageInformation ii ON ii.imageid = i.id
+                WHERE i.status = 1
+                  AND {tag_filter}
+                ORDER BY {order_by}
+                LIMIT ? OFFSET ?
+                """,
+                params_base + (limit, offset),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def count_images_by_tag(self, tag_id: int, include_children: bool = False) -> int:
+        with self.session() as conn:
+            if include_children:
+                try:
+                    row = conn.execute(
+                        """
+                        SELECT COUNT(DISTINCT it.imageid) AS cnt
+                        FROM ImageTags it
+                        JOIN Images i ON i.id = it.imageid AND i.status = 1
+                        WHERE it.tagid = ?
+                           OR it.tagid IN (SELECT id FROM TagsTree WHERE pid = ?)
+                        """,
+                        (tag_id, tag_id),
+                    ).fetchone()
+                    return int(row["cnt"]) if row else 0
+                except Exception:
+                    pass
+                row = conn.execute(
+                    """
+                    SELECT COUNT(DISTINCT it.imageid) AS cnt
+                    FROM ImageTags it
+                    JOIN Images i ON i.id = it.imageid AND i.status = 1
+                    WHERE it.tagid = ?
+                       OR it.tagid IN (SELECT id FROM Tags WHERE pid = ?)
+                    """,
+                    (tag_id, tag_id),
+                ).fetchone()
+                return int(row["cnt"]) if row else 0
+
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM ImageTags it
+                JOIN Images i ON i.id = it.imageid AND i.status = 1
+                WHERE it.tagid = ?
+                """,
+                (tag_id,),
+            ).fetchone()
+            return int(row["cnt"]) if row else 0
