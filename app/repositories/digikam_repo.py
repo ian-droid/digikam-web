@@ -351,20 +351,45 @@ class DigikamRepository:
             sections.append(("Location", gps_items))
 
         # Numeric geo for map links (prefer *Number columns)
+        def _parse_coord(value):
+            if value is None:
+                return None
+            if isinstance(value, (int, float)):
+                return float(value)
+            s = str(value).strip()
+            if not s:
+                return None
+            # DigiKam may store "37,123" or "37.123 N" etc.
+            s = s.replace(",", ".")
+            hemi = 1.0
+            if s[-1:] in ("S", "W", "s", "w"):
+                hemi = -1.0
+                s = s[:-1].strip()
+            elif s[-1:] in ("N", "E", "n", "e"):
+                s = s[:-1].strip()
+            if s[:1] in ("+", "-"):
+                pass
+            # take first token
+            token = s.split()[0]
+            try:
+                return float(token) * hemi
+            except ValueError:
+                return None
+
         geo = None
         try:
             lat = pos_d.get("latitudeNumber")
             lon = pos_d.get("longitudeNumber")
-            if lat is None and pos_d.get("latitude") is not None:
-                lat = float(str(pos_d.get("latitude")).replace(",", ".").split()[0])
-            if lon is None and pos_d.get("longitude") is not None:
-                lon = float(str(pos_d.get("longitude")).replace(",", ".").split()[0])
+            if lat is None:
+                lat = _parse_coord(pos_d.get("latitude"))
+            if lon is None:
+                lon = _parse_coord(pos_d.get("longitude"))
             if lat is not None and lon is not None:
                 lat_f, lon_f = float(lat), float(lon)
                 if -90 <= lat_f <= 90 and -180 <= lon_f <= 180:
                     alt = pos_d.get("altitude")
                     try:
-                        alt_f = float(alt) if alt is not None else None
+                        alt_f = float(str(alt).replace(",", ".")) if alt is not None else None
                     except (TypeError, ValueError):
                         alt_f = None
                     geo = {"lat": lat_f, "lon": lon_f, "altitude": alt_f}

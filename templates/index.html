@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#141517">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>DigiKam Web</title>
-  <link rel="stylesheet" href="/static/style.css?v=tags1">
+  <link rel="stylesheet" href="/static/style.css?v=geo-tb3">
 </head>
 <body>
   <header class="topbar">
@@ -88,6 +88,10 @@
     <div class="lb-toolbar">
       <span id="lb-caption" class="lb-caption"></span>
       <div class="lb-actions">
+        <div id="lb-geo" class="lb-geo" hidden>
+          <select id="lb-map-provider" class="lb-map-provider" aria-label="Map provider"></select>
+          <a id="lb-map-open" class="lb-icon-btn lb-map-open" href="#" target="_blank" rel="noopener noreferrer" title="" aria-label="Open in map">🌐</a>
+        </div>
         <button type="button" id="lb-info" class="lb-icon-btn" title="EXIF / Metadata" aria-label="Show metadata">ℹ</button>
         <button type="button" id="lb-close" class="lb-icon-btn" title="Close" aria-label="Close">×</button>
       </div>
@@ -110,6 +114,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=tags1"></script>
+  <script src="/static/app.js?v=geo-tb3"></script>
 </body>
 </html>

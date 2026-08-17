@@ -767,16 +767,23 @@
 
   // ---------- Lightbox + EXIF dialog ----------
   const lbInfo = $("#lb-info");
+  const lbGeo = $("#lb-geo");
+  const lbMapProvider = $("#lb-map-provider");
+  const lbMapOpen = $("#lb-map-open");
   const exifDialog = $("#exif-dialog");
   const exifBody = $("#exif-dialog-body");
   const exifBackdrop = $("#exif-backdrop");
   const exifDialogClose = $("#exif-dialog-close");
   let lbCurrentId = null;
   let lbExifLoadedFor = null;
+  let lbExifData = null;       // cached EXIF payload for current image
+  let lbExifLoading = null;    // in-flight Promise for preload
 
   function openLightbox(img) {
     lbCurrentId = img.id;
     lbExifLoadedFor = null;
+    lbExifData = null;
+    lbExifLoading = null;
     // /file returns original for stills, placeholder image for video/unsupported
     lbImg.src = `/api/images/${img.id}/file`;
     const kind = mediaKindFromName(img.name);
@@ -786,42 +793,206 @@
     lbCaption.textContent = caption;
     lightbox.hidden = false;
     closeExifDialog();
+    hideToolbarGeo();
+    // Preload EXIF/META while viewing; panel still opens only on ℹ
+    const openedId = img.id;
+    const gridHasGeo = !!img.has_geo;
+    preloadExif(openedId).then((data) => {
+      if (lbCurrentId !== openedId) return;
+      updateToolbarGeo(data ? data.geo : null, gridHasGeo);
+    }).catch(() => {
+      if (lbCurrentId === openedId && gridHasGeo) {
+        updateToolbarGeo(null, true);
+      }
+    });
   }
 
   function closeLightbox() {
     lightbox.hidden = true;
     lbImg.src = "";
     lbCurrentId = null;
+    lbExifData = null;
+    lbExifLoading = null;
+    hideToolbarGeo();
     closeExifDialog();
   }
 
   function openExifDialog() {
     if (!lbCurrentId) return;
     exifDialog.hidden = false;
-    if (lbExifLoadedFor !== lbCurrentId) {
-      loadExif(lbCurrentId);
+    if (lbExifLoadedFor === lbCurrentId && lbExifData) {
+      renderExif(lbExifData);
+      return;
     }
+    // Still loading or failed — ensure fetch and show result when ready
+    exifBody.innerHTML = `<div class="loading">Loading…</div>`;
+    preloadExif(lbCurrentId).then((data) => {
+      if (lbCurrentId == null) return;
+      if (data) renderExif(data);
+    });
   }
 
   function closeExifDialog() {
     if (exifDialog) exifDialog.hidden = true;
   }
 
-  async function loadExif(imageId) {
-    exifBody.innerHTML = `<div class="loading">Loading…</div>`;
-    try {
-      const res = await fetch(`/api/images/${imageId}/exif`, { credentials: "same-origin" });
-      if (res.status === 401) {
-        window.location.href = "/login";
+  function preloadExif(imageId) {
+    if (lbExifLoadedFor === imageId && lbExifData) {
+      return Promise.resolve(lbExifData);
+    }
+    if (lbExifLoading && lbExifLoadedFor === imageId) {
+      return lbExifLoading;
+    }
+    const id = imageId;
+    lbExifLoading = (async () => {
+      try {
+        const res = await fetch(`/api/images/${id}/exif`, { credentials: "same-origin" });
+        if (res.status === 401) {
+          window.location.href = "/login";
+          return null;
+        }
+        if (!res.ok) throw new Error("Failed to load metadata");
+        const data = await res.json();
+        // Ignore if user already moved to another image
+        if (lbCurrentId !== id) return null;
+        lbExifLoadedFor = id;
+        lbExifData = data;
+        return data;
+      } catch (err) {
+        if (lbCurrentId === id) {
+          lbExifData = null;
+          lbExifLoadedFor = null;
+          // Only show error if the dialog is open
+          if (exifDialog && !exifDialog.hidden) {
+            exifBody.innerHTML = `<div class="loading">Error: ${err.message}</div>`;
+          }
+        }
+        return null;
+      } finally {
+        if (lbCurrentId === id) lbExifLoading = null;
+      }
+    })();
+    return lbExifLoading;
+  }
+
+
+  // Map 🌐 → popup-like window (~1/2 screen width × 1/2 height)
+  if (lbMapOpen) {
+    lbMapOpen.addEventListener("click", (e) => {
+      const url = lbMapOpen.getAttribute("href");
+      if (!url || url === "#" || url === "null") {
+        e.preventDefault();
         return;
       }
-      if (!res.ok) throw new Error("Failed to load metadata");
-      const data = await res.json();
-      lbExifLoadedFor = imageId;
-      renderExif(data);
-    } catch (err) {
-      exifBody.innerHTML = `<div class="loading">Error: ${err.message}</div>`;
+      e.preventDefault();
+      const w = Math.max(400, Math.floor(window.screen.availWidth / 2));
+      const h = Math.max(300, Math.floor(window.screen.availHeight / 2));
+      const left = Math.max(0, Math.floor((window.screen.availWidth - w) / 2));
+      const top = Math.max(0, Math.floor((window.screen.availHeight - h) / 2));
+      const features = [
+        `width=${w}`,
+        `height=${h}`,
+        `left=${left}`,
+        `top=${top}`,
+        "scrollbars=yes",
+        "resizable=yes",
+        "menubar=no",
+        "toolbar=no",
+        "location=yes",
+        "status=no",
+      ].join(",");
+      const win = window.open(url, "digikam_web_map", features);
+      if (win) {
+        try { win.opener = null; } catch (_) {}
+        try { win.focus(); } catch (_) {}
+      } else {
+        // Popup blocked — fall back to new tab
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    });
+  }
+
+  function hideToolbarGeo() {
+    if (lbGeo) {
+      lbGeo.hidden = true;
+      lbGeo.setAttribute("hidden", "");
     }
+    if (lbMapOpen) {
+      lbMapOpen.removeAttribute("href");
+      lbMapOpen.title = "";
+    }
+  }
+
+  function updateToolbarGeo(geo, forceShow) {
+    if (!lbGeo || !lbMapProvider || !lbMapOpen) {
+      console.warn("Toolbar geo elements missing from DOM");
+      return;
+    }
+    // Accept lat/lon or latitude/longitude
+    let lat = geo && (geo.lat != null ? geo.lat : geo.latitude);
+    let lon = geo && (geo.lon != null ? geo.lon : geo.longitude);
+    lat = lat != null ? Number(lat) : NaN;
+    lon = lon != null ? Number(lon) : NaN;
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
+
+    if (!hasCoords && !forceShow) {
+      hideToolbarGeo();
+      return;
+    }
+
+    const tip = hasCoords
+      ? `${lat.toFixed(6)}, ${lon.toFixed(6)}`
+      : "GPS present (coordinates unavailable)";
+    lbMapOpen.title = tip;
+    lbMapOpen.setAttribute("aria-label", `Open in map (${tip})`);
+
+    const applyHref = () => {
+      if (!hasCoords) {
+        lbMapOpen.removeAttribute("href");
+        return;
+      }
+      const opt = lbMapProvider.selectedOptions[0];
+      const urlTpl = opt ? opt.dataset.url : "";
+      const zoom = (typeof mapDefaultZoom !== "undefined" && mapDefaultZoom) ? mapDefaultZoom : "15";
+      lbMapOpen.href = buildMapUrl(urlTpl, lat, lon, zoom);
+    };
+
+    // Reveal immediately so the control is visible even while templates load
+    lbGeo.hidden = false;
+    lbGeo.removeAttribute("hidden");
+
+    ensureMapTemplates()
+      .then((templates) => {
+        const list = templates && templates.length
+          ? templates
+          : [
+              { id: "google", name: "Google Maps", url: "https://www.google.com/maps?q={lat},{lon}" },
+              { id: "osm", name: "OpenStreetMap", url: "https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map={zoom}/{lat}/{lon}" },
+            ];
+        const prev = lbMapProvider.value;
+        lbMapProvider.innerHTML = "";
+        list.forEach((tpl) => {
+          const opt = document.createElement("option");
+          opt.value = tpl.id;
+          opt.textContent = tpl.name;
+          opt.dataset.url = tpl.url;
+          lbMapProvider.appendChild(opt);
+        });
+        if (prev && [...lbMapProvider.options].some((o) => o.value === prev)) {
+          lbMapProvider.value = prev;
+        }
+        applyHref();
+        lbGeo.hidden = false;
+        lbGeo.removeAttribute("hidden");
+      })
+      .catch((err) => {
+        console.warn("map templates", err);
+        applyHref();
+        lbGeo.hidden = false;
+        lbGeo.removeAttribute("hidden");
+      });
+
+    lbMapProvider.onchange = applyHref;
   }
 
   let mapLinkTemplates = null;
@@ -853,62 +1024,12 @@
 
   function renderExif(data) {
     const sections = data.sections || [];
-    const geo = data.geo;
-    if (!sections.length && !geo) {
+    // Geo / map controls live in the lightbox toolbar (updateToolbarGeo)
+    if (!sections.length) {
       exifBody.innerHTML = `<div class="loading">No metadata in DigiKam database for this image.</div>`;
       return;
     }
     const frag = document.createDocumentFragment();
-
-    if (geo && geo.lat != null && geo.lon != null) {
-      const box = document.createElement("div");
-      box.className = "lb-exif-section map-links-section";
-      const h = document.createElement("h4");
-      h.textContent = "Open in map";
-      box.appendChild(h);
-
-      const row = document.createElement("div");
-      row.className = "map-links-row";
-
-      const select = document.createElement("select");
-      select.id = "map-provider-select";
-      select.className = "map-provider-select";
-
-      const openBtn = document.createElement("a");
-      openBtn.className = "btn map-open-btn";
-      openBtn.target = "_blank";
-      openBtn.rel = "noopener noreferrer";
-      openBtn.textContent = "Open";
-
-      const updateHref = () => {
-        const tpl = select.selectedOptions[0];
-        const urlTpl = tpl ? tpl.dataset.url : "";
-        openBtn.href = buildMapUrl(urlTpl, geo.lat, geo.lon, mapDefaultZoom);
-      };
-
-      ensureMapTemplates().then((templates) => {
-        select.innerHTML = "";
-        templates.forEach((t) => {
-          const opt = document.createElement("option");
-          opt.value = t.id;
-          opt.textContent = t.name;
-          opt.dataset.url = t.url;
-          select.appendChild(opt);
-        });
-        updateHref();
-      });
-
-      select.addEventListener("change", updateHref);
-      row.appendChild(select);
-      row.appendChild(openBtn);
-
-      const coords = document.createElement("div");
-      coords.className = "map-coords muted";
-      coords.textContent = `${Number(geo.lat).toFixed(6)}, ${Number(geo.lon).toFixed(6)}`;
-      box.appendChild(row);
-      box.appendChild(coords);
-      frag.appendChild(box);
-    }
 
     sections.forEach((sec) => {
       const box = document.createElement("div");

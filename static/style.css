@@ -438,6 +438,31 @@ button#sidebar-toggle.sidebar-toggle {
   flex-shrink: 0;
 }
 
+.lb-geo {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.lb-geo[hidden] {
+  display: none !important;
+}
+
+.lb-map-provider {
+  max-width: 9rem;
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.lb-map-open {
+  text-decoration: none;
+  font-size: 1.1rem;
+}
+
 .lb-icon-btn {
   width: 2rem;
   height: 2rem;
