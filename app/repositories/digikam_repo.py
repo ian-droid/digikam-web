@@ -37,6 +37,17 @@ class DigikamRepository:
             conn.close()
 
     # ------------------------------------------------------------------ AlbumRoots
+
+    @staticmethod
+    def _normalize_image_rows(rows: list) -> list[dict[str, Any]]:
+        out = []
+        for r in rows:
+            d = dict(r)
+            if "has_geo" in d:
+                d["has_geo"] = bool(d["has_geo"])
+            out.append(d)
+        return out
+
     def get_album_roots(self) -> list[dict[str, Any]]:
         with self.session() as conn:
             rows = conn.execute(
@@ -127,7 +138,19 @@ class DigikamRepository:
                     ii.width,
                     ii.height,
                     ii.orientation,
-                    ii.format
+                    ii.format,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1 FROM ImagePositions ip
+                            WHERE ip.imageid = i.id
+                              AND (
+                                    ip.latitudeNumber IS NOT NULL
+                                 OR ip.longitudeNumber IS NOT NULL
+                                 OR (ip.latitude IS NOT NULL AND ip.latitude != '')
+                                 OR (ip.longitude IS NOT NULL AND ip.longitude != '')
+                              )
+                        ) THEN 1 ELSE 0
+                    END AS has_geo
                 FROM Images i
                 LEFT JOIN ImageInformation ii ON ii.imageid = i.id
                 WHERE i.album = ? AND i.status = 1
@@ -136,7 +159,7 @@ class DigikamRepository:
                 """,
                 (album_id, limit, offset),
             ).fetchall()
-            return [dict(r) for r in rows]
+            return self._normalize_image_rows(rows)
 
     def count_images_in_album(self, album_id: int) -> int:
         with self.session() as conn:
@@ -166,6 +189,18 @@ class DigikamRepository:
                     ii.height,
                     ii.orientation,
                     ii.format,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1 FROM ImagePositions ip
+                            WHERE ip.imageid = i.id
+                              AND (
+                                    ip.latitudeNumber IS NOT NULL
+                                 OR ip.longitudeNumber IS NOT NULL
+                                 OR (ip.latitude IS NOT NULL AND ip.latitude != '')
+                                 OR (ip.longitude IS NOT NULL AND ip.longitude != '')
+                              )
+                        ) THEN 1 ELSE 0
+                    END AS has_geo,
                     ii.colorDepth,
                     ii.colorModel,
                     a.albumRoot,
@@ -477,7 +512,19 @@ class DigikamRepository:
                     ii.width,
                     ii.height,
                     ii.orientation,
-                    ii.format
+                    ii.format,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1 FROM ImagePositions ip
+                            WHERE ip.imageid = i.id
+                              AND (
+                                    ip.latitudeNumber IS NOT NULL
+                                 OR ip.longitudeNumber IS NOT NULL
+                                 OR (ip.latitude IS NOT NULL AND ip.latitude != '')
+                                 OR (ip.longitude IS NOT NULL AND ip.longitude != '')
+                              )
+                        ) THEN 1 ELSE 0
+                    END AS has_geo
                 FROM Images i
                 JOIN ImageInformation ii ON ii.imageid = i.id
                 WHERE i.status = 1
@@ -488,7 +535,7 @@ class DigikamRepository:
                 """,
                 (prefix, limit, offset),
             ).fetchall()
-            return [dict(r) for r in rows]
+            return self._normalize_image_rows(rows)
 
     def count_images_by_date(
         self,
@@ -602,7 +649,19 @@ class DigikamRepository:
                             i.id, i.name, i.album, i.uniqueHash, i.status, i.category,
                             i.modificationDate, i.fileSize,
                             ii.rating, ii.creationDate, ii.digitizationDate,
-                            ii.width, ii.height, ii.orientation, ii.format
+                            ii.width, ii.height, ii.orientation, ii.format,
+                            CASE
+                                WHEN EXISTS (
+                                    SELECT 1 FROM ImagePositions ip
+                                    WHERE ip.imageid = i.id
+                                      AND (
+                                            ip.latitudeNumber IS NOT NULL
+                                         OR ip.longitudeNumber IS NOT NULL
+                                         OR (ip.latitude IS NOT NULL AND ip.latitude != '')
+                                         OR (ip.longitude IS NOT NULL AND ip.longitude != '')
+                                      )
+                                ) THEN 1 ELSE 0
+                            END AS has_geo
                         FROM Images i
                         LEFT JOIN ImageInformation ii ON ii.imageid = i.id
                         WHERE i.status = 1
@@ -616,7 +675,7 @@ class DigikamRepository:
                         """,
                         (tag_id, tag_id, limit, offset),
                     ).fetchall()
-                    return [dict(r) for r in rows]
+                    return self._normalize_image_rows(rows)
                 except Exception:
                     pass
 
@@ -626,7 +685,19 @@ class DigikamRepository:
                     i.id, i.name, i.album, i.uniqueHash, i.status, i.category,
                     i.modificationDate, i.fileSize,
                     ii.rating, ii.creationDate, ii.digitizationDate,
-                    ii.width, ii.height, ii.orientation, ii.format
+                    ii.width, ii.height, ii.orientation, ii.format,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1 FROM ImagePositions ip
+                            WHERE ip.imageid = i.id
+                              AND (
+                                    ip.latitudeNumber IS NOT NULL
+                                 OR ip.longitudeNumber IS NOT NULL
+                                 OR (ip.latitude IS NOT NULL AND ip.latitude != '')
+                                 OR (ip.longitude IS NOT NULL AND ip.longitude != '')
+                              )
+                        ) THEN 1 ELSE 0
+                    END AS has_geo
                 FROM Images i
                 LEFT JOIN ImageInformation ii ON ii.imageid = i.id
                 WHERE i.status = 1
@@ -636,7 +707,7 @@ class DigikamRepository:
                 """,
                 params_base + (limit, offset),
             ).fetchall()
-            return [dict(r) for r in rows]
+            return self._normalize_image_rows(rows)
 
     def count_images_by_tag(self, tag_id: int, include_children: bool = False) -> int:
         with self.session() as conn:

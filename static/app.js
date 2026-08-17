@@ -739,6 +739,14 @@
       badge.textContent = "FILE";
       card.appendChild(badge);
     }
+    if (img.has_geo) {
+      const geo = document.createElement("span");
+      geo.className = "geo-badge";
+      geo.title = "Has GPS location";
+      geo.setAttribute("aria-label", "Has GPS location");
+      geo.textContent = "🌐";
+      card.appendChild(geo);
+    }
     card.appendChild(meta);
     card.addEventListener("click", () => openLightbox(img));
     return card;
