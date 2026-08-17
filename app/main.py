@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import asyncio
 import os
 import signal
@@ -33,6 +34,64 @@ from app.repositories.digikam_repo import DigikamRepository
 from app.services.path_resolver import PathResolver
 from app.services.thumbnail import ThumbnailService
 from app.paths import templates_dir, static_dir, default_data_dir
+
+
+def _format_local_ts(dt: datetime | None = None) -> str:
+    """
+    Locale-independent local timestamp.
+    Avoid %Z (can expand to long translated names, e.g. Chinese Windows).
+    Use numeric offset: 2026-08-15 20:53:00 UTC-10:00
+    """
+    dt = dt or datetime.now().astimezone()
+    if dt.tzinfo is None:
+        dt = dt.astimezone()
+    off = dt.strftime("%z") or ""
+    if len(off) == 5:  # e.g. -1000
+        off = f"{off[:3]}:{off[3:]}"
+    return f"{dt.strftime('%Y-%m-%d %H:%M:%S')} UTC{off}"
+
+
+def _log(msg: str, *, error: bool = False) -> None:
+    """Console line with local datetime prefix."""
+    stream = sys.stderr if error else sys.stdout
+    print(f"[{_format_local_ts()}] {msg}", file=stream)
+
+
+def _uvicorn_log_config() -> dict:
+    """Access/error logs with the same timestamp style as _log."""
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "()": "uvicorn.logging.DefaultFormatter",
+                "fmt": "%(asctime)s %(levelprefix)s %(message)s",
+                "use_colors": None,
+            },
+            "access": {
+                "()": "uvicorn.logging.AccessFormatter",
+                "fmt": '%(asctime)s %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',
+            },
+        },
+        "handlers": {
+            "default": {
+                "formatter": "default",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stderr",
+            },
+            "access": {
+                "formatter": "access",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+            },
+        },
+        "loggers": {
+            "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": False},
+            "uvicorn.error": {"handlers": ["default"], "level": "INFO", "propagate": False},
+            "uvicorn.access": {"handlers": ["access"], "level": "INFO", "propagate": False},
+        },
+    }
+
 
 
 def _install_loop_exception_filter() -> None:
@@ -72,11 +131,11 @@ async def lifespan(app: FastAPI):
     """Application startup / shutdown (replaces deprecated on_event)."""
     app_db_path = settings.app_db_path
     if not app_db_path.exists():
-        print(
+        _log(
             f"ERROR: Application database not found at {app_db_path}.\n"
             "Run the init command first:\n"
             "  python -m app.cli.init_cmd init --digikam-db /path/to/digikam4.db",
-            file=sys.stderr,
+            error=True,
         )
         sys.exit(1)
 
@@ -89,7 +148,7 @@ async def lifespan(app: FastAPI):
 
     digikam_path = app_db.get_config("digikam_db_path")
     if not digikam_path:
-        print("ERROR: digikam_db_path not set in app database. Re-run init.", file=sys.stderr)
+        _log("ERROR: digikam_db_path not set in app database. Re-run init.", error=True)
         sys.exit(1)
 
     digikam = DigikamRepository(Path(digikam_path))
@@ -102,7 +161,7 @@ async def lifespan(app: FastAPI):
     from app.map_links import ensure_map_templates
     ensure_map_templates(app_db)
     _install_loop_exception_filter()
-    print(f"DigiKam Web ready – core DB: {digikam_path}")
+    _log(f"DigiKam Web ready – core DB: {digikam_path}")
 
     yield
 
@@ -183,25 +242,28 @@ def run() -> None:
                 key = Path(k)
 
     if not cert or not key:
-        print(
+        _log(
             "ERROR: TLS certificate and key are required.\n"
             "Provide them via --cert/--key, environment variables\n"
             "DIGIKAM_WEB_TLS_CERT / DIGIKAM_WEB_TLS_KEY, or store them in the app DB at init.",
-            file=sys.stderr,
+            error=True,
         )
         sys.exit(1)
 
     if not Path(cert).is_file() or not Path(key).is_file():
-        print(f"ERROR: TLS files not found: cert={cert} key={key}", file=sys.stderr)
+        _log(f"ERROR: TLS files not found: cert={cert} key={key}", error=True)
         sys.exit(1)
 
-    print(f"Listening on https://{host}:{port}/")
+    _log(f"Listening on https://{host}:{port}/")
     if host in ("0.0.0.0", "::"):
-        print("  (bound to all interfaces – reachable from LAN / Internet if firewall allows)")
+        _log("  (bound to all interfaces – reachable from LAN / Internet if firewall allows)")
     else:
-        print(f"  (bound to {host} only)")
-    print("Press Ctrl+C to stop (press again to force exit).")
+        _log(f"  (bound to {host} only)")
+    _log("Press Ctrl+C to stop (press again to force exit).")
 
+    import logging
+
+    log_config = _uvicorn_log_config()
     config = uvicorn.Config(
         "app.main:app",
         host=host,
@@ -210,16 +272,24 @@ def run() -> None:
         ssl_keyfile=str(key),
         reload=False,
         log_level="info",
+        log_config=log_config,
         timeout_graceful_shutdown=3,
         timeout_keep_alive=5,
     )
+
+    # Force locale-independent asctime on uvicorn formatters (no translated %Z)
+    def _fmt_time(self, record, datefmt=None):  # noqa: ARG001
+        return _format_local_ts(datetime.fromtimestamp(record.created).astimezone())
+
+    logging.Formatter.formatTime = _fmt_time  # type: ignore[method-assign]
+
     server = uvicorn.Server(config)
 
     force_exit_armed = {"n": 0}
 
     def _force_exit_later() -> None:
         def _kill() -> None:
-            print("Shutdown is taking too long – forcing exit.", file=sys.stderr)
+            _log("Shutdown is taking too long – forcing exit.", error=True)
             os._exit(0)
 
         t = threading.Timer(4.0, _kill)
@@ -229,12 +299,12 @@ def run() -> None:
     def _handle_signal(signum, frame) -> None:
         force_exit_armed["n"] += 1
         if force_exit_armed["n"] == 1:
-            print("\nShutting down…")
+            _log("Shutting down…")
             server.should_exit = True
             server.force_exit = True
             _force_exit_later()
         else:
-            print("\nForce exit.")
+            _log("Force exit.")
             os._exit(0)
 
     signal.signal(signal.SIGINT, _handle_signal)
@@ -246,7 +316,7 @@ def run() -> None:
     try:
         server.run()
     except KeyboardInterrupt:
-        print("\nShutting down…")
+        _log("Shutting down…")
         server.should_exit = True
 
 
